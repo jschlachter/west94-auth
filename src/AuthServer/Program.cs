@@ -1,9 +1,14 @@
+using AuthServer.Domain.AggregatesModel.ApplicationUserAggregate;
+using AuthServer.Infrastructure;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.Extensions.Options;
-
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using dotenv;
 using Serilog;
 
 using West94.AuthServer.Endpoints;
+using dotenv.net;
+using West94.AuthServer;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
@@ -15,20 +20,48 @@ Log.Logger = new LoggerConfiguration()
         shared: true)
     .CreateBootstrapLogger();
 
+DotEnv.Load(new DotEnvOptions(probeForEnv: true, probeLevelsToSearch: 5));
 try 
 {
     var builder = WebApplication.CreateBuilder(args);
 
     //
     // Add services to the container.
+    builder.Services.AddDbContext<ApplicationDbContext>(options => 
+    {
+        var connectionString = builder.Configuration.GetConnectionString("AuthServer");
 
-    builder.Services.AddOpenIddict()
-    .AddCore((options) => {
+        if (string.IsNullOrWhiteSpace(connectionString)) {
+            throw new InvalidOperationException("Connection string is not set");
+        }
+
+        var username = builder.Configuration["POSTGRES_USER"];
+        var password = builder.Configuration["POSTGRES_PASSWORD"];
+        connectionString = connectionString.Replace("{username}", username).Replace("{password}", password);
+
+        options.UseNpgsql(connectionString, dbOpts => dbOpts.MigrationsAssembly(typeof(Program).Assembly.FullName));
+        options.UseOpenIddict();
+    });
+
+    builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+        .AddEntityFrameworkStores<ApplicationDbContext>()
+        .AddDefaultTokenProviders();
         
+    builder.Services.AddOpenIddict()
+    .AddCore((options) => 
+    {
+        options.UseEntityFrameworkCore()
+            .UseDbContext<ApplicationDbContext>();
     })
     .AddServer((options) => {
-        options.SetTokenEndpointUris("connect/token");
-        options.AllowClientCredentialsFlow();
+        options
+            .AllowAuthorizationCodeFlow()
+            .AllowClientCredentialsFlow()
+            .AllowRefreshTokenFlow();
+
+        options
+            .SetAuthorizationEndpointUris("connect/authorize")
+            .SetTokenEndpointUris("connect/token");
 
         options
             .AddDevelopmentEncryptionCertificate()
@@ -36,6 +69,7 @@ try
 
         options
             .UseAspNetCore()
+            .EnableAuthorizationEndpointPassthrough()
             .EnableTokenEndpointPassthrough();
     })
     .AddValidation((options) => 
@@ -64,7 +98,15 @@ try
 
     builder.Services.AddAuthorization()
         .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-        .AddCookie();
+        .AddCookie(options => 
+        {
+            options.Cookie.HttpOnly = true;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+            options.SlidingExpiration = true;
+
+            // options.LoginPath = "/Identity/Account/Login";
+            // options.AccessDeniedPath = "/Identity/Account/AccessDenied";
+        });
 
     var app = builder.Build();
 
@@ -88,6 +130,12 @@ try
     app.MapRazorPages();
     
     app.MapGroup("/connect").MapAuthorizationEndpoints();
+
+    if (args.Contains("/seed")) {
+        Log.Information("Seeding database...");
+        SeedData.EnsureSeedData(app);
+        Log.Information("Done seeding database. Exiting...");
+    }
 
     app.Run();
 }
