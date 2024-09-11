@@ -6,6 +6,7 @@ using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 using OpenIddict.Abstractions;
@@ -23,7 +24,7 @@ public class Index : PageModel
     readonly IAuthenticationSchemeProvider _schemeProvider;
     readonly IOpenIddictApplicationManager _applicationManager;
 
-    public ViewModel ViewModel { get; set; } = default!;
+    public ViewModel View { get; set; } = default!;
 
     public InputModel Input { get; set; } = default!;
 
@@ -37,6 +38,18 @@ public class Index : PageModel
         _signInManager = signInManager;
         _schemeProvider = schemeProvider;
         _applicationManager = applicationManager;
+    }
+
+    public async Task<IActionResult> OnGet(string? returnUrl)
+    {
+        await BuildModelAsync(returnUrl);
+
+        if (View.IsExternalLoginOnly)
+        {
+            return RedirectToPage("/ExternalLogin/Challange", new { scheme = View.ExternalLoginScheme, returnUrl});
+        }
+
+        return Page();
     }
 
     async Task BuildModelAsync(string? returnUrl)
@@ -57,20 +70,20 @@ public class Index : PageModel
 
         var allowLocal = true;
 
-        var request = HttpContext.GetOpenIddictClientRequest();
-        var application = await _applicationManager.FindByClientIdAsync(request.ClientId);
+        // var request = HttpContext.GetOpenIddictClientRequest();
+        // var application = await _applicationManager.FindByClientIdAsync(request.ClientId);
 
-        if (application != null) 
-        {
-            var properties = await _applicationManager.GetPropertiesAsync(application);
+        // if (application != null) 
+        // {
+        //     var properties = await _applicationManager.GetPropertiesAsync(application);
             
-            if(properties.TryGetValue("enableLocalLogin", out var value)) 
-            {
-                allowLocal = value.GetBoolean();
-            }
-        }
+        //     if(properties.TryGetValue("enableLocalLogin", out var value)) 
+        //     {
+        //         allowLocal = value.GetBoolean();
+        //     }
+        // }
 
-        ViewModel = new ViewModel
+        View = new ViewModel
         {
             AllowRememberLogin = LoginOptions.AllowRememberLogin,
             EnableLocalLogin = allowLocal && LoginOptions.AllowLocalLogin,
