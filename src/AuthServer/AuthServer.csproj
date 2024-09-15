@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Watch Include="Assets\**\*.css" Exclude="node_modules\**\*;**\*.js.map;obj\**\*;bin\**\*" />
+    <Watch Include="Assets\**\*.css;**\*.cshtml" Exclude="node_modules\**\*;**\*.js.map;obj\**\*;bin\**\*" />
   </ItemGroup>
 
 </Project>
